@@ -1,7 +1,12 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:numberpicker/numberpicker.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:intl/intl.dart';
 
-enum SampleItem { BSE, NSE }
+//enum SampleItem { BSE, NSE }
 
 void main() {
   runApp(const MyApp());
@@ -43,10 +48,15 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  SampleItem? selectedItem;
+  final TextEditingController _controller = TextEditingController();
 
-  DateTime selectedDate1 = DateTime(2005, 1, 1);
-  DateTime selectedDate2 = DateTime(2005, 1, 1);
+  //String? se1='BSE';
+  //String? se2='NSE';
+  //SampleItem? selectedItem;
+  String selectedItem = 'Choose Stock Exchange';
+
+  DateTime selectedDate1 = DateTime(2006, 1, 1);
+  DateTime selectedDate2 = DateTime.now().subtract(Duration(days: 2));
 
   int _currentValue = 3;
 
@@ -54,7 +64,7 @@ class _MyHomePageState extends State<MyHomePage> {
     final DateTime? picked = await showDatePicker(
         context: context,
         initialDate: selectedDate1,
-        firstDate: DateTime(2005, 1, 1),
+        firstDate: DateTime(2006, 1, 1),
         lastDate: DateTime.now().subtract(Duration(days: 1)));
     if (picked != null && picked != selectedDate1)
       setState(() {
@@ -65,7 +75,7 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<Null> _selectDate2(BuildContext context) async {
     final DateTime? picked2 = await showDatePicker(
         context: context,
-        initialDate: selectedDate2,
+        initialDate: DateTime.now().subtract(Duration(days: 2)),
         firstDate: selectedDate1.add(Duration(days: 1)),
         lastDate: DateTime.now().subtract(Duration(days: 1)));
     if (picked2 != null && picked2 != selectedDate2)
@@ -74,11 +84,98 @@ class _MyHomePageState extends State<MyHomePage> {
       });
   }
 
+  String symbol = '';
+
+  double? startDateHigh = 0.0;
+  double? startDateLow = 0.0;
+  double? endDateHigh = 0.0;
+  double? endDateLow = 0.0;
+  double? startDateValue = 0.0;
+  double? endDateValue = 0.0;
+  double? change = 0.0;
+  String? roundedChange = '';
+
+  Map<String, dynamic> _info = {};
+
+  Future<void> _fetchInfo() async {
+    print('HI$symbol');
+    final url =
+        'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=$symbol&apikey=E8X9AFDQ3F1NSHV1';
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      setState(() {
+        _info = json.decode(response.body);
+      });
+      print('Posts loaded');
+      log('Full JSON data: ${jsonEncode(_info)}');
+    } else {
+      throw Exception('Failed to load posts');
+    }
+  }
+
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      setState(() {
+        symbol = _controller.text;
+      });
+      _fetchInfo();
+    });
+  }
+
+  void _getStartValues(String date) {
+    final timeSeries = _info['Time Series (Daily)'];
+    if (timeSeries != null) {
+      print('Time Series Data Found');
+      final dateWise = timeSeries[date];
+      if (dateWise != null) {
+        final high = dateWise['2. high'];
+        final low = dateWise['3. low'];
+        setState(() {
+          startDateHigh = double.tryParse(high);
+          startDateLow = double.tryParse(low);
+          startDateValue = (startDateHigh! + startDateLow!) / 2;
+        });
+      } else {
+        print('Date $date not found in data');
+      }
+    } else {
+      print('Time Series data not available');
+    }
+  }
+
+  void _getEndValues(String date) {
+    final timeSeries = _info['Time Series (Daily)'];
+    if (timeSeries != null) {
+      final dateWise = timeSeries[date];
+      if (dateWise != null) {
+        final high = dateWise['2. high'];
+        final low = dateWise['3. low'];
+        setState(() {
+          endDateHigh = double.tryParse(high);
+          endDateLow = double.tryParse(low);
+          endDateValue = (endDateHigh! + endDateLow!) / 2;
+        });
+      } else {
+        print('Date $date not found in data');
+      }
+    } else {
+      print('Time Series data not available');
+    }
+  }
+
   String message = ' ';
 
   void _submitClicked() {
+    String formattedStartDate = DateFormat('yyyy-MM-dd').format(selectedDate1);
+    String formattedEndDate = DateFormat('yyyy-MM-dd').format(selectedDate2);
+    print(symbol);
+    _getStartValues(formattedStartDate);
+    _getEndValues(formattedEndDate);
     setState(() {
-      message = 'Submit Clicked';
+      change = _currentValue * (endDateValue! - startDateValue!);
+      roundedChange = change?.toStringAsFixed(2);
     });
   }
 
@@ -101,33 +198,34 @@ class _MyHomePageState extends State<MyHomePage> {
           child: Column(
             children: [
               Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Expanded(
+                  /*Expanded(
                     flex: 5,
                     child: Column(
                       children: [
-                        PopupMenuButton<SampleItem>(
+                        PopupMenuButton<String>(
                           initialValue: selectedItem,
-                          onSelected: (SampleItem item) {
+                          onSelected: (String item) {
                             setState(() {
                               selectedItem = item;
                             });
                           },
                           itemBuilder: (BuildContext context) =>
-                              <PopupMenuEntry<SampleItem>>[
-                            const PopupMenuItem<SampleItem>(
-                              value: SampleItem.BSE,
+                              <PopupMenuEntry<String>>[
+                            const PopupMenuItem<String>(
+                              value: 'BSE',
                               child: Text('BSE'),
                             ),
-                            const PopupMenuItem<SampleItem>(
-                              value: SampleItem.NSE,
+                            const PopupMenuItem<String>(
+                             value: 'NSE',
                               child: Text('NSE'),
                             ),
                           ],
-                          child: const OutlinedButton(
+                          child: OutlinedButton(
                             onPressed: null,
-                            child: Text('Choose Stock Exchange',
-                                style: TextStyle(color: Colors.blueGrey)),
+                            child: Text(selectedItem,
+                                style: TextStyle(color: Colors.black54)),
                           ),
                         ),
                       ],
@@ -135,18 +233,40 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                   const SizedBox(width: 35),
                   const Expanded(
-                    flex: 6,
-                    child: Column(
-                      children: [
-                        TextField(
-                          decoration: InputDecoration(
-                            labelText: 'Stock Symbol',
-                            border: OutlineInputBorder(),
+                    flex: 6,*/
+                  //child: //Column(
+                  //children: [
+                  SizedBox(width: 80),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      decoration: InputDecoration(
+                        labelText: 'Stock Symbol',
+                        labelStyle: TextStyle(
+                          color: Colors.black87,
+                          fontSize: 16, // Ending TextStyle widget
+                        ),
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide(
+                            color: Colors.deepPurple, // Border color
+                            width: 2.0,
                           ),
                         ),
-                      ],
+                        disabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(
+                            color: Colors.deepPurple,
+                            // Border color when disabled
+                            width: 2.0,
+                          ),
+                        ),
+                      ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
+                  SizedBox(width: 80),
+                  //],
+                  //),
+                  //),
                 ],
               ),
               SizedBox(height: 30),
@@ -220,14 +340,31 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ],
               ),
-              SizedBox(height: 40),
-              Row(
+              SizedBox(height: 50),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    message,
+                    'Stock Selected: $symbol',
+                    style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Quantity: $_currentValue',
+                    style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold),
+                  ),
+
+                  SizedBox(height: 20),
+                  Text(
+                    'Net Change: $roundedChange',
                     style: TextStyle(
                         color: Colors.deepPurpleAccent,
-                        fontSize: 16,
+                        fontSize: 25,
                         fontWeight: FontWeight.bold),
                   ),
                 ],
